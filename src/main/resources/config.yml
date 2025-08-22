@@ -1,7 +1,6 @@
 # PerfectFireball 配置文件
 
 # 火球速度倍率 (默认: 1.0)
-#: 1.0)
 # 值越大，火球飞行速度越快
 fireball-speed-multiplier: 1.0
 
