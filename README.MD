@@ -25,7 +25,7 @@ PerfectFireball 是一个强大的 Bukkit/Spigot 插件，为玩家发射火球�
 
 1. 下载最新的 `PerfectFireball.jar` 文件
 2. 将文件放入服务器的 `plugins` 文件夹
-3. 重启服务器或使用 `/reload` 命令
+3. 重启服务器
 4. 插件会自动生成配置文件 `plugins/PerfectFireball/config.yml`
 5. 根据需求修改配置文件（详情见下文）
 
