@@ -1,0 +1,17 @@
+name: PerfectFireball
+version: 1.1
+main: fun.ceroxe.PerfectFireball
+api-version: 1.13
+commands:
+  pfb:
+    description: 重载火焰弹插件配置
+    usage: /pfb reload
+    permission: pfb.reload
+    permission-message: "&c你没有权限执行此命令!"
+permissions:
+  pfb.use:
+    description: 允许使用自定义火焰弹
+    default: op
+  pfb.reload:
+    description: 允许重载火焰弹插件配置
+    default: op
