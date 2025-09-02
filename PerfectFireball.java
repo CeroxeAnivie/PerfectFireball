@@ -69,7 +69,8 @@ public class PerfectFireball extends JavaPlugin implements Listener, CommandExec
                     getConfig().addDefault("fireball-speed-multiplier", 1.0); // 火球速度倍率
                     getConfig().addDefault("fireball-timeout", 20); // 火球超时时间（秒）
                     getConfig().addDefault("cooldown-ticks", 16); // 冷却时间（tick），20 ticks = 1秒
-                    getConfig().addDefault("disable-fall-damage", false); // 新增：全局禁用摔落伤害
+                    getConfig().addDefault("disable-fall-damage", false); // 全局禁用摔落伤害
+                    getConfig().addDefault("override-other-plugins", false); // 覆盖其他插件行为
                     getConfig().addDefault("destroy-blocks", false);
                     getConfig().addDefault("damage-entities", false);
                     getConfig().addDefault("knockback-power", 5.0);
@@ -106,6 +107,7 @@ public class PerfectFireball extends JavaPlugin implements Listener, CommandExec
                 sender.sendMessage(ChatColor.GOLD + "冷却时间(tick): " + getConfig().getInt("cooldown-ticks") +
                         " (≈" + String.format("%.1f", getConfig().getDouble("cooldown-ticks") / 20.0) + "秒)");
                 sender.sendMessage(ChatColor.GOLD + "禁用摔落伤害: " + getConfig().getBoolean("disable-fall-damage"));
+                sender.sendMessage(ChatColor.GOLD + "覆盖其他插件行为: " + getConfig().getBoolean("override-other-plugins"));
                 sender.sendMessage(ChatColor.GOLD + "破坏方块: " + getConfig().getBoolean("destroy-blocks"));
                 sender.sendMessage(ChatColor.GOLD + "伤害实体: " + getConfig().getBoolean("damage-entities"));
                 sender.sendMessage(ChatColor.GOLD + "击飞强度: " + getConfig().getDouble("knockback-power"));
@@ -138,8 +140,22 @@ public class PerfectFireball extends JavaPlugin implements Listener, CommandExec
         return Collections.emptyList();
     }
 
-    @EventHandler(priority = EventPriority.HIGH)
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)
     public void onPlayerInteract(PlayerInteractEvent event) {
+        boolean overrideMode = getConfig().getBoolean("override-other-plugins", false);
+
+        // 覆盖模式：强制处理所有火焰弹交互事件
+        if (overrideMode) {
+            // 重置事件取消状态，确保我们能处理
+            if (event.isCancelled()) {
+                event.setCancelled(false);
+            }
+        }
+        // 非覆盖模式：如果事件已被取消，则不处理
+        else if (event.isCancelled()) {
+            return;
+        }
+
         if ((event.getAction() == Action.RIGHT_CLICK_AIR || event.getAction() == Action.RIGHT_CLICK_BLOCK) &&
                 event.getItem() != null &&
                 event.getItem().getType() == Material.FIRE_CHARGE) {
@@ -174,6 +190,9 @@ public class PerfectFireball extends JavaPlugin implements Listener, CommandExec
                 double speedMultiplier = getConfig().getDouble("fireball-speed-multiplier", 1.0);
                 fireball.setVelocity(eyeLoc.getDirection().multiply(1.5 * speedMultiplier));
 
+                // 火焰弹元数据标记（用于覆盖模式）
+                fireball.setMetadata("PerfectFireball", new org.bukkit.metadata.FixedMetadataValue(this, true));
+
                 // 消耗物品
                 if (!player.getGameMode().equals(GameMode.CREATIVE)) {
                     event.getItem().setAmount(event.getItem().getAmount() - 1);
@@ -185,9 +204,9 @@ public class PerfectFireball extends JavaPlugin implements Listener, CommandExec
                     Bukkit.getScheduler().runTaskLater(this, () -> {
                         if (fireball.isValid()) {
                             fireball.remove();
-                            // 添加消失效果 - 使用正确的粒子常量 LARGE_SMOKE
+                            // 修正：使用正确的粒子常量 SMOKE_LARGE 代替 LARGE_SMOKE
                             Location loc = fireball.getLocation();
-                            loc.getWorld().spawnParticle(Particle.LARGE_SMOKE, loc, 10, 0.2, 0.2, 0.2, 0.05);
+                            loc.getWorld().spawnParticle(Particle.SMOKE_LARGE, loc, 10, 0.2, 0.2, 0.2, 0.05);
                         }
                     }, timeoutSeconds * 20L); // 转换为ticks
                 }
@@ -199,47 +218,87 @@ public class PerfectFireball extends JavaPlugin implements Listener, CommandExec
         }
     }
 
-    @EventHandler
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)
     public void onProjectileHit(ProjectileHitEvent event) {
-        if (event.getEntity() instanceof Fireball fireball) {
-            // 只处理玩家发射的火焰弹
-            if (!(fireball.getShooter() instanceof Player shooter)) return;
+        boolean overrideMode = getConfig().getBoolean("override-other-plugins", false);
 
-            // 检查玩家是否有权限使用自定义火球
-            if (!shooter.hasPermission(FIREBALL_PERMISSION)) {
-                return;
-            }
+        if (!(event.getEntity() instanceof Fireball fireball)) {
+            return;
+        }
 
-            // 自定义火球行为
-            Location explodeLoc = fireball.getLocation();
-            World world = fireball.getWorld();
-
-            // 读取配置
-            boolean destroyBlocks = getConfig().getBoolean("destroy-blocks", false);
-            boolean damageEntities = getConfig().getBoolean("damage-entities", false);
-            double knockbackPower = getConfig().getDouble("knockback-power", 5.0); // 使用一致的默认值5.0
-            double knockbackRadius = getConfig().getDouble("knockback-radius", 5.0);
-            double explosionPower = getConfig().getDouble("explosion-power", 0.0);
-
-            // 取消原版爆炸
-            event.setCancelled(true);
-            fireball.remove();
-
-            // 创建自定义爆炸（仅视觉效果）
-            world.createExplosion(explodeLoc, (float) explosionPower, false, destroyBlocks, null);
-
-            // 应用击飞效果
-            applyKnockback(world, explodeLoc, knockbackRadius, damageEntities, knockbackPower, shooter);
-
-            // 爆炸效果
-            if (explosionPower > 0) {
-                world.playSound(explodeLoc, Sound.ENTITY_GENERIC_EXPLODE, 1.0f, 1.0f);
-                world.spawnParticle(Particle.EXPLOSION, explodeLoc, 10, 0.5, 0.5, 0.5, 0.2);
+        // 覆盖模式：强制处理所有火焰弹命中事件
+        if (overrideMode) {
+            // 重置事件取消状态，确保我们能处理
+            if (event.isCancelled()) {
+                event.setCancelled(false);
             }
         }
+        // 非覆盖模式：如果事件已被取消，则不处理
+        else if (event.isCancelled()) {
+            return;
+        }
+
+        // 只处理玩家发射的火焰弹
+        if (!(fireball.getShooter() instanceof Player shooter)) return;
+
+        // 检查玩家是否有权限使用自定义火球
+        if (!shooter.hasPermission(FIREBALL_PERMISSION)) {
+            return;
+        }
+
+        // 覆盖模式下的额外检查：确保是我们生成的火焰弹
+        if (overrideMode && !fireball.hasMetadata("PerfectFireball")) {
+            return;
+        }
+
+        // 自定义火球行为
+        Location explodeLoc = fireball.getLocation();
+        World world = fireball.getWorld();
+
+        // 读取配置
+        boolean destroyBlocks = getConfig().getBoolean("destroy-blocks", false);
+        boolean damageEntities = getConfig().getBoolean("damage-entities", false);
+        double knockbackPower = getConfig().getDouble("knockback-power", 5.0); // 使用一致的默认值5.0
+        double knockbackRadius = getConfig().getDouble("knockback-radius", 5.0);
+        double explosionPower = getConfig().getDouble("explosion-power", 0.0);
+
+        // 取消原版爆炸
+        event.setCancelled(true);
+        fireball.remove();
+
+        // ==== 完全重做爆炸系统 ====
+        // 1. 方块破坏处理
+        if (destroyBlocks) {
+            // 应用游戏规则确保方块破坏生效
+            boolean previousMobGriefing = world.getGameRuleValue(GameRule.MOB_GRIEFING);
+            world.setGameRule(GameRule.MOB_GRIEFING, true);
+
+            // 创建爆炸（仅用于方块破坏）
+            world.createExplosion(explodeLoc, (float) Math.min(explosionPower, 4.0), false, true, null);
+
+            // 恢复原始游戏规则
+            world.setGameRule(GameRule.MOB_GRIEFING, previousMobGriefing);
+        }
+
+        // 2. 爆炸视觉效果（完全独立于伤害系统）
+        if (explosionPower > 0) {
+            // 根据威力调整效果强度
+            float scaledPower = (float) Math.min(explosionPower, 4.0);
+
+            // 播放爆炸声音
+            world.playSound(explodeLoc, Sound.ENTITY_GENERIC_EXPLODE, scaledPower, 1.0f);
+
+            // 粒子效果
+            int particleCount = (int) (scaledPower * 15);
+            world.spawnParticle(Particle.EXPLOSION_LARGE, explodeLoc, 1, 0, 0, 0, 0);
+            world.spawnParticle(Particle.SMOKE_LARGE, explodeLoc, particleCount, 0.5, 0.5, 0.5, 0.05);
+            world.spawnParticle(Particle.FLAME, explodeLoc, particleCount / 2, 0.5, 0.5, 0.5, 0.05);
+        }
+
+        // 3. 应用击飞效果（独立配置伤害）
+        applyKnockback(world, explodeLoc, knockbackRadius, damageEntities, knockbackPower, shooter);
     }
 
-    // 新添加的事件处理器：禁用摔落伤害
     @EventHandler(priority = EventPriority.NORMAL)
     public void onEntityDamage(EntityDamageEvent event) {
         // 检查是否启用全局禁用摔落伤害
@@ -293,9 +352,11 @@ public class PerfectFireball extends JavaPlugin implements Listener, CommandExec
                         currentVelocity.getZ() + knockback.getZ()
                 ));
 
-                // 伤害处理（跳过发射者）
-                if (damageEntities && livingEntity.isValid() && !isShooter) {
+                // 伤害处理（跳过发射者）- 严格遵循damageEntities配置
+                if (damageEntities && !isShooter && livingEntity.isValid()) {
                     double damage = 6.0 * attenuation;
+                    // 确保至少造成0.5点伤害
+                    damage = Math.max(0.5, damage);
                     livingEntity.damage(damage);
 
                     // 受伤粒子效果

@@ -1,5 +1,5 @@
 name: PerfectFireball
-version: 1.1
+version: 1.2
 main: fun.ceroxe.PerfectFireball
 api-version: 1.13
 commands:

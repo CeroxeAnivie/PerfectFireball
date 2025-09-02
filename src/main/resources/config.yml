@@ -34,3 +34,7 @@ knockback-radius: 5.0
 # 控制爆炸的视觉效果（声音、粒子），不影响实际破坏
 # 设置为0.0时无视觉效果，最大值为4.0（相当于TNT）
 explosion-power: 0.0
+
+# 是否禁用摔落伤害 (默认: false)
+# 设置为true时，整个服务器将忽略所有摔落伤害
+disable-fall-damage: false
